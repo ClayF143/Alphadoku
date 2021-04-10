@@ -1,5 +1,7 @@
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Scanner;
@@ -21,54 +23,95 @@ public class Alphadoku
 		// each block has 1 of every letter
 	}
 	
-	public String givens(String filePath)
+	public String givens(String inputPath, String outputPath)
 	{
-		
-		
-		
-		// read text matrix into a hashmap
-		HashMap<Integer, String> puzzle = new HashMap<Integer, String>();
-		
-		File inputPuzzleFile = new File(filePath);
+		// read text matrix		
+		File inputPuzzleFile = new File(inputPath);
 		Scanner myReader;
-		String [] data = new String [25];
+		String data = "";
 		try
 		{
 			myReader = new Scanner(inputPuzzleFile);
-			int i = 0;
 			while (myReader.hasNextLine())
 			{
 				String line = myReader.nextLine();
 				if(! line.isEmpty())
 				{
-					data[i] = line;
-					i++;
+					data += line + "\n";
 				}
 			}
 		} catch (FileNotFoundException e)
 		{
 			e.printStackTrace();
 		}
+		data = data.replace(" ", "");
+		data = data.replace("\n", "");
+		char [] puzzle = data.toCharArray();
+		System.out.println("Given Puzzle:");
+		printPuzzle(puzzle);
+		System.out.println("\n");
 		
-		for(String line: data)
+		// convert the given layout to cnf clauses, each square being its value is a clause
+		boolean first = true;
+		String givens = "";
+		for(int i = 0; i < puzzle.length; i++)
 		{
-			System.out.println(line);
+			if(puzzle[i] != '_')
+			{
+				if(!first)
+					givens += "\n";
+				else
+					first = false;
+				int letter = (int)puzzle[i] - (int)'A' + 1;
+				int var = i*25 + letter;
+				givens += String.valueOf(var) + " 0";
+			}
 		}
 		
-		// make a text file and copy the rules
+		// make a text file and copy the rules and given layout
+		data = "";
+		try(FileInputStream fileInputStream = new FileInputStream(RULESPATH))
+		{
+		    int ch = fileInputStream.read();
+		    while(ch != -1)
+		    {
+		        data += (char)ch;
+		        ch = fileInputStream.read();
+		    }
+		}
+		catch (FileNotFoundException e)
+		{
+			e.printStackTrace();
+		} catch (IOException e)
+		{
+			e.printStackTrace();
+		}
 		
-		// convert hashmap into CNF and add to text file
+		try(FileOutputStream fileOutputStream = new FileOutputStream(outputPath))
+		{
+			data = data + "\n" + givens;
+		    fileOutputStream.write(data.getBytes());
+		}
+		catch (FileNotFoundException e)
+		{
+			e.printStackTrace();
+		}
+		catch (IOException e)
+		{
+			e.printStackTrace();
+		}
 		
 		return "";
 		
 	}
 	
+	// returns the integer value that represents a given variable
 	private int variableInt(int row, int col, int letter)
 	{
 		return (row * 5 + col) * 25 + letter;
 	}
 	
-	private String removeSolution(HashMap<Integer, String> solution)
+	private String removeSolution(char [] puzzle)
 	{
 		// if the first 3 squares are C,D,E, then cnf of removed solution
 		// would be ~x1,1,3 | ~x1,2,4 | ~x1,3,5 ...
@@ -80,23 +123,27 @@ public class Alphadoku
 	
 	public void solvePuzzle(String puzzlePath)
 	{
-		String puzzleCnf = givens(puzzlePath);
+		//String puzzleCnf = givens(puzzlePath);
 		// minisat
 		// if no solution stop and pring no solution
 		// check for mult solutions, print result
 	}
 	
-	public void printPuzzle(HashMap<Integer, String> puzzle)
+	public void printPuzzle(char [] puzzle)
 	{
 		for(int r = 0; r < 25; r++)
 		{
+			if(r%5 == 0 && r!= 0)
+				System.out.print("\n\n\n");
+			else if(r!= 0)
+				System.out.print("\n");
+			
 			for(int c = 0; c < 25; c++)
 			{
-				Integer key = new Integer(r*25 + c);
-				String letter = puzzle.get(key);
-				System.out.print(letter + " ");
+				if(c%5 == 0 && c!=0)
+					System.out.print("   ");
+				System.out.print(puzzle[r*25 + c] + " ");
 			}
-			System.out.println();
 		}
 	}
 	
@@ -120,6 +167,6 @@ public class Alphadoku
 		
 		
 		Alphadoku a = new Alphadoku();
-		a.givens(examplesLocation + "\\alpha_0.txt");
+		a.givens(examplesLocation + "\\alpha_0.txt", "puzzle1.txt");
 	}
 }
