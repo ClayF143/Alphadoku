@@ -15,15 +15,81 @@ public class Alphadoku
 		
 	}
 	
-	public static void rules()
+	public void rules()
 	{
+		String rules = "";
+		
+		// top formating
+		
 		// each square only has 1 letter
-		// each column has 1 of every letter
-		// each row has 1 of every letter
-		// each block has 1 of every letter
+		for(int square = 0; square < 25 * 25; square++)
+		{
+			// ex square 1
+			// at least 1 var pertaining to square 1 must be true
+			for(int i = 1 + square * 25; i<=25 + square * 25; i++)
+			{
+				rules += String.valueOf(i) + " ";
+			}
+			rules += "0\n";
+			
+			// and no pair of those vars can both be true
+			for(int i = 1 + square * 25; i <= 24 + square * 25; i++)
+			{
+				for(int j = i + 1; j <= 25 + square * 25; j++)
+				{
+					// -i -j 0
+					rules += "-" + String.valueOf(i) + " -" + String.valueOf(j) + " 0\n";
+				}
+			}
+		}
+		
+		// each row, column, and block has 1 of every letter
+		for(int row = 0; row < 25; row++)
+		{
+			for(int col = 0; col < 25; col++)
+			{
+				for(int letter = 1; letter <= 25; letter ++)
+				{
+					//varInt(row, col, letter) => -varInt(__, col, letter) & -varInt(row, __, letter) & -varInt( square, letter)
+					//a => -b  is the same as  -a | -b
+					int mainVar = varInt(row, col, letter);
+					
+					// same letter can't be in that row
+					for(int r = 0; r < 25; r++)
+					{
+						int impliedFalseVar = varInt(r, col, letter);
+						if(r != row)
+							rules += "-" + String.valueOf(mainVar) + " -" + String.valueOf(impliedFalseVar) + " 0\n";
+					}
+					
+					// same letter can't be in that column
+					for(int c = 0; c < 25; c++)
+					{
+						int impliedFalseVar = varInt(row, c, letter);
+						if(c != col)
+							rules += "-" + String.valueOf(mainVar) + " -" + String.valueOf(impliedFalseVar) + " 0\n";
+					}
+					
+					// same letter can't be in that block
+					int rowBlock = (int) (row/5);
+					int colBlock = (int) (col/5);
+					for(int r = rowBlock * 5; r < (rowBlock + 1) * 5; r++)
+					{
+						for(int c = colBlock * 5; c < (colBlock + 1) * 5; c++)
+						{
+							int impliedFalseVar = varInt(r, c, letter);
+							if(c != col || r != row)
+								rules += "-" + String.valueOf(mainVar) + " -" + String.valueOf(impliedFalseVar) + " 0\n";
+						}
+					}
+				}
+			}
+		}
+		
+		writeToFile(rules, RULESPATH);
 	}
 	
-	public String givens(String inputPath, String outputPath)
+	public void givens(String inputPath, String outputPath)
 	{
 		// read text matrix		
 		File inputPuzzleFile = new File(inputPath);
@@ -100,13 +166,26 @@ public class Alphadoku
 		{
 			e.printStackTrace();
 		}
-		
-		return "";
-		
+	}
+	
+	public void writeToFile(String data, String outputPath)
+	{
+		try(FileOutputStream fileOutputStream = new FileOutputStream(outputPath))
+		{
+		    fileOutputStream.write(data.getBytes());
+		}
+		catch (FileNotFoundException e)
+		{
+			e.printStackTrace();
+		}
+		catch (IOException e)
+		{
+			e.printStackTrace();
+		}
 	}
 	
 	// returns the integer value that represents a given variable
-	private int variableInt(int row, int col, int letter)
+	private int varInt(int row, int col, int letter)
 	{
 		return (row * 5 + col) * 25 + letter;
 	}
@@ -167,6 +246,7 @@ public class Alphadoku
 		
 		
 		Alphadoku a = new Alphadoku();
-		a.givens(examplesLocation + "\\alpha_0.txt", "puzzle1.txt");
+		a.rules();
+		// a.givens(examplesLocation + "\\alpha_0.txt", "puzzle1.txt");
 	}
 }
