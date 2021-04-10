@@ -1,23 +1,26 @@
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
-import java.util.HashMap;
+import java.nio.channels.FileChannel;
 import java.util.Scanner;
 
 public class Alphadoku
 {
 	private final String RULESPATH = "rules.txt";
+	public final int NUMVARS = 15625;
 	
 	public Alphadoku()
 	{
 		
 	}
 	
-	public void rules()
+	public void rules() throws IOException
 	{
-		String rules = "";
+		BufferedWriter writer = new BufferedWriter(new FileWriter(RULESPATH));
 		
 		// top formating
 		
@@ -28,9 +31,9 @@ public class Alphadoku
 			// at least 1 var pertaining to square 1 must be true
 			for(int i = 1 + square * 25; i<=25 + square * 25; i++)
 			{
-				rules += String.valueOf(i) + " ";
+				writer.write(String.valueOf(i) + " ");
 			}
-			rules += "0\n";
+			writer.write("0\n");
 			
 			// and no pair of those vars can both be true
 			for(int i = 1 + square * 25; i <= 24 + square * 25; i++)
@@ -38,7 +41,7 @@ public class Alphadoku
 				for(int j = i + 1; j <= 25 + square * 25; j++)
 				{
 					// -i -j 0
-					rules += "-" + String.valueOf(i) + " -" + String.valueOf(j) + " 0\n";
+					writer.write("-" + String.valueOf(i) + " -" + String.valueOf(j) + " 0\n");
 				}
 			}
 		}
@@ -59,7 +62,7 @@ public class Alphadoku
 					{
 						int impliedFalseVar = varInt(r, col, letter);
 						if(r != row)
-							rules += "-" + String.valueOf(mainVar) + " -" + String.valueOf(impliedFalseVar) + " 0\n";
+							writer.write("-" + String.valueOf(mainVar) + " -" + String.valueOf(impliedFalseVar) + " 0\n");
 					}
 					
 					// same letter can't be in that column
@@ -67,7 +70,7 @@ public class Alphadoku
 					{
 						int impliedFalseVar = varInt(row, c, letter);
 						if(c != col)
-							rules += "-" + String.valueOf(mainVar) + " -" + String.valueOf(impliedFalseVar) + " 0\n";
+							writer.write("-" + String.valueOf(mainVar) + " -" + String.valueOf(impliedFalseVar) + " 0\n");
 					}
 					
 					// same letter can't be in that block
@@ -79,14 +82,13 @@ public class Alphadoku
 						{
 							int impliedFalseVar = varInt(r, c, letter);
 							if(c != col || r != row)
-								rules += "-" + String.valueOf(mainVar) + " -" + String.valueOf(impliedFalseVar) + " 0\n";
+								writer.write("-" + String.valueOf(mainVar) + " -" + String.valueOf(impliedFalseVar) + " 0\n");
 						}
 					}
 				}
 			}
 		}
-		
-		writeToFile(rules, RULESPATH);
+		writer.close();
 	}
 	
 	public void givens(String inputPath, String outputPath)
@@ -117,54 +119,27 @@ public class Alphadoku
 		printPuzzle(puzzle);
 		System.out.println("\n");
 		
-		// convert the given layout to cnf clauses, each square being its value is a clause
-		boolean first = true;
-		String givens = "";
-		for(int i = 0; i < puzzle.length; i++)
-		{
-			if(puzzle[i] != '_')
-			{
-				if(!first)
-					givens += "\n";
-				else
-					first = false;
-				int letter = (int)puzzle[i] - (int)'A' + 1;
-				int var = i*25 + letter;
-				givens += String.valueOf(var) + " 0";
-			}
-		}
-		
 		// make a text file and copy the rules and given layout
-		data = "";
-		try(FileInputStream fileInputStream = new FileInputStream(RULESPATH))
+		try
 		{
-		    int ch = fileInputStream.read();
-		    while(ch != -1)
-		    {
-		        data += (char)ch;
-		        ch = fileInputStream.read();
-		    }
-		}
-		catch (FileNotFoundException e)
+			// a puzzle's cnf is the rules cnf file plus a clause for each given letter in the puzzle
+			copyFile(new File(RULESPATH), new File(outputPath));
+			BufferedWriter writer = new BufferedWriter(new FileWriter(outputPath, true));
+			
+			// convert the given layout to cnf clauses, each square being its value is a clause
+			for(int i = 0; i < puzzle.length; i++)
+			{
+				if(puzzle[i] != '_')
+				{
+					int letter = (int)puzzle[i] - (int)'A' + 1;
+					int var = varInt(i, letter);
+					writer.write("\n" + String.valueOf(var) + " 0");
+				}
+			}
+			writer.close();
+		} catch (IOException e1)
 		{
-			e.printStackTrace();
-		} catch (IOException e)
-		{
-			e.printStackTrace();
-		}
-		
-		try(FileOutputStream fileOutputStream = new FileOutputStream(outputPath))
-		{
-			data = data + "\n" + givens;
-		    fileOutputStream.write(data.getBytes());
-		}
-		catch (FileNotFoundException e)
-		{
-			e.printStackTrace();
-		}
-		catch (IOException e)
-		{
-			e.printStackTrace();
+			e1.printStackTrace();
 		}
 	}
 	
@@ -184,10 +159,25 @@ public class Alphadoku
 		}
 	}
 	
+	public void copyFile(File source, File dest) throws IOException
+	{
+		FileChannel sourceChannel = null;
+	    FileChannel destChannel = null;
+		sourceChannel = new FileInputStream(source).getChannel();
+		destChannel = new FileOutputStream(dest).getChannel();
+		destChannel.transferFrom(sourceChannel, 0, sourceChannel.size());
+		sourceChannel.close();
+		destChannel.close();
+	}
+	
 	// returns the integer value that represents a given variable
 	private int varInt(int row, int col, int letter)
 	{
 		return (row * 5 + col) * 25 + letter;
+	}
+	private int varInt(int index, int letter)
+	{
+		return index * 25 + letter;
 	}
 	
 	private String removeSolution(char [] puzzle)
@@ -246,7 +236,13 @@ public class Alphadoku
 		
 		
 		Alphadoku a = new Alphadoku();
-		a.rules();
-		// a.givens(examplesLocation + "\\alpha_0.txt", "puzzle1.txt");
+		try
+		{
+			a.rules();
+		} catch (IOException e)
+		{
+			e.printStackTrace();
+		}
+		a.givens(examplesLocation + "\\alpha_0.txt", "puzzle1.txt");
 	}
 }
