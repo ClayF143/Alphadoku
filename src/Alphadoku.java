@@ -21,7 +21,7 @@ public class Alphadoku
 {
 	private final String RULESPATH = "rules.txt";
 	private final String NONUNIQUE_SOLUTION_PATH = "tempPuzzle.cnf";
-	public final int NUM_VARS = 15625;
+	private final int NUM_VARS = 15625;
 	private int numRulesClauses;
 	
 	public Alphadoku()
@@ -39,6 +39,8 @@ public class Alphadoku
 	
 	public int rules() throws IOException
 	{
+		// creates a text file that has the cnf clauses for the rules of alphadoku
+		
 		BufferedWriter writer = new BufferedWriter(new FileWriter(RULESPATH));
 		int numClauses = 0;
 		
@@ -122,7 +124,9 @@ public class Alphadoku
 	
 	public int givens(String inputPath, String outputPath)
 	{
-		// read text matrix		
+		// creates the full cnf file to find a solution for a given problem
+		
+		// read text matrix	from input file
 		File inputPuzzleFile = new File(inputPath);
 		Scanner myReader;
 		String data = "";
@@ -184,7 +188,7 @@ public class Alphadoku
 					numclauses++;
 				}
 			}
-			// write the p cnf vars clauses to the beginning of the file
+			// write the "p cnf vars clauses" header to the beginning of the file
 			RandomAccessFile f = new RandomAccessFile(new File(outputPath), "rw");
 			f.seek(0); // to the beginning
 			String firstLine = "p cnf " + String.valueOf(NUM_VARS) + " " + String.valueOf(numclauses) + " 0\n";
@@ -199,33 +203,6 @@ public class Alphadoku
 		}
 	}
 	
-	public void writeToFile(String data, String outputPath)
-	{
-		try(FileOutputStream fileOutputStream = new FileOutputStream(outputPath))
-		{
-		    fileOutputStream.write(data.getBytes());
-		}
-		catch (FileNotFoundException e)
-		{
-			e.printStackTrace();
-		}
-		catch (IOException e)
-		{
-			e.printStackTrace();
-		}
-	}
-	
-	public void copyFile(File source, File dest) throws IOException
-	{
-		FileChannel sourceChannel = null;
-	    FileChannel destChannel = null;
-		sourceChannel = new FileInputStream(source).getChannel();
-		destChannel = new FileOutputStream(dest).getChannel();
-		destChannel.transferFrom(sourceChannel, 0, sourceChannel.size());
-		sourceChannel.close();
-		destChannel.close();
-	}
-	
 	// returns the integer value that represents a given variable
 	private int varInt(int row, int col, int letter)
 	{
@@ -238,7 +215,7 @@ public class Alphadoku
 		return index * 25 + l;
 	}
 	
-	private String removeSolution(char [] puzzle, String puzzlePath, int numvars)
+	private void removeSolution(char [] puzzle, String puzzlePath, int numvars)
 	{
 		// if the first 3 squares are C,D,E, then cnf of removed solution
 		// would be ~x1,1,3 | ~x1,2,4 | ~x1,3,5 ...
@@ -248,8 +225,11 @@ public class Alphadoku
 		{
 			BufferedWriter out = new BufferedWriter(new FileWriter(NONUNIQUE_SOLUTION_PATH));
 			BufferedReader in = new BufferedReader(new FileReader(puzzlePath));
+			// first write the new header, which is the same as the old one but with 1 extra clause
 			out.write("p cnf " + NUM_VARS + " " + String.valueOf(numvars + 1) + "\n");
 			in.readLine();
+			
+			// then copy the givens cnf
 			char [] buffer = new char[8192];
 			long count = 0;
 			int n;
@@ -259,6 +239,8 @@ public class Alphadoku
 				count += n;
 			}
 			in.close();
+			
+			// then add the last clause at the bottom
 			String newLine = "\n";
 			for(int i = 0; i < puzzle.length; i++)
 			{
@@ -272,14 +254,14 @@ public class Alphadoku
 		{
 			e.printStackTrace();
 		}
-		
-		
-		
-		return "";
 	}
 	
 	public void solvePuzzle(String puzzlePath, String outputPath)
 	{
+		// finds a solution to the puzzle if there is one, then checks to see if that solution is unique
+		// uses the SAT4J solver
+		
+		// first create the cnf file
 		int numvars = givens(puzzlePath, outputPath);
 		
 		ISolver solver = SolverFactory.newDefault();
@@ -289,6 +271,7 @@ public class Alphadoku
 			IProblem problem = reader.parseInstance(outputPath);
 			if(problem.isSatisfiable())
 			{
+				// if there's a solution, print it
 				System.out.println("Satisfiable!");
 				int [] solution = problem.model();
 				char [] charSolution = new char [625];
@@ -305,7 +288,7 @@ public class Alphadoku
 				}
 				printPuzzle(charSolution);
 				
-				// find second solution
+				// find second solution and print
 				removeSolution(charSolution, outputPath, numvars);
 				IProblem problem2 = reader.parseInstance(NONUNIQUE_SOLUTION_PATH);
 				if(problem2.isSatisfiable())
@@ -361,7 +344,9 @@ public class Alphadoku
 	
 	public void solveDirectory(File examplesDirectory)
 	{
+		// runs solvePuzzle() on every file in a directory
 		File [] filesList = examplesDirectory.listFiles();
+		long time = 0;
 		for(int i = 0; i < filesList.length; i++)
 		{
 			String exampleLocation = filesList[i].getAbsolutePath();
@@ -370,8 +355,10 @@ public class Alphadoku
 			long start = System.currentTimeMillis();
 			solvePuzzle(exampleLocation, exampleSolution);
 			long end = System.currentTimeMillis();
+			time += end - start;
 			System.out.println("Time: " + String.valueOf(end - start) + " milliseconds");
 		}
+		System.out.println("Average Time: " + String.valueOf(time / filesList.length));
 	}
 	
 	public static void main(String [] args)
