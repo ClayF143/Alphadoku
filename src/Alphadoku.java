@@ -1,30 +1,48 @@
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.util.Scanner;
+
+import org.sat4j.minisat.SolverFactory;
+import org.sat4j.reader.DimacsReader;
+import org.sat4j.reader.Reader;
+import org.sat4j.specs.IProblem;
+import org.sat4j.specs.ISolver;
 
 public class Alphadoku
 {
 	private final String RULESPATH = "rules.txt";
-	public final int NUMVARS = 15625;
+	private final String NONUNIQUE_SOLUTION_PATH = "tempPuzzle.cnf";
+	public final int NUM_VARS = 15625;
+	private int numRulesClauses;
 	
 	public Alphadoku()
 	{
+		numRulesClauses = 0;
+		try
+		{
+			numRulesClauses = rules();
+		} catch (IOException e)
+		{
+			e.printStackTrace();
+		}
 		
 	}
 	
-	public void rules() throws IOException
+	public int rules() throws IOException
 	{
 		BufferedWriter writer = new BufferedWriter(new FileWriter(RULESPATH));
+		int numClauses = 0;
 		
-		// top formating
-		
-		// each square only has 1 letter
+		// write clauses for the rule: each square only has 1 letter
 		for(int square = 0; square < 25 * 25; square++)
 		{
 			// ex square 1
@@ -34,6 +52,7 @@ public class Alphadoku
 				writer.write(String.valueOf(i) + " ");
 			}
 			writer.write("0\n");
+			numClauses++;
 			
 			// and no pair of those vars can both be true
 			for(int i = 1 + square * 25; i <= 24 + square * 25; i++)
@@ -42,6 +61,7 @@ public class Alphadoku
 				{
 					// -i -j 0
 					writer.write("-" + String.valueOf(i) + " -" + String.valueOf(j) + " 0\n");
+					numClauses++;
 				}
 			}
 		}
@@ -53,7 +73,7 @@ public class Alphadoku
 			{
 				for(int letter = 1; letter <= 25; letter ++)
 				{
-					//varInt(row, col, letter) => -varInt(__, col, letter) & -varInt(row, __, letter) & -varInt( square, letter)
+					//varInt(row, col, letter) => -varInt(__, col, letter) & -(row, __, letter) & -varInt( square, letter)
 					//a => -b  is the same as  -a | -b
 					int mainVar = varInt(row, col, letter);
 					
@@ -62,15 +82,20 @@ public class Alphadoku
 					{
 						int impliedFalseVar = varInt(r, col, letter);
 						if(r != row)
+						{
 							writer.write("-" + String.valueOf(mainVar) + " -" + String.valueOf(impliedFalseVar) + " 0\n");
+							numClauses++;
+						}
 					}
-					
 					// same letter can't be in that column
 					for(int c = 0; c < 25; c++)
 					{
 						int impliedFalseVar = varInt(row, c, letter);
 						if(c != col)
+						{
 							writer.write("-" + String.valueOf(mainVar) + " -" + String.valueOf(impliedFalseVar) + " 0\n");
+							numClauses++;
+						}
 					}
 					
 					// same letter can't be in that block
@@ -82,16 +107,20 @@ public class Alphadoku
 						{
 							int impliedFalseVar = varInt(r, c, letter);
 							if(c != col || r != row)
+							{
 								writer.write("-" + String.valueOf(mainVar) + " -" + String.valueOf(impliedFalseVar) + " 0\n");
+								numClauses++;
+							}
 						}
 					}
 				}
 			}
 		}
 		writer.close();
+		return numClauses;
 	}
 	
-	public void givens(String inputPath, String outputPath)
+	public int givens(String inputPath, String outputPath)
 	{
 		// read text matrix		
 		File inputPuzzleFile = new File(inputPath);
@@ -123,23 +152,50 @@ public class Alphadoku
 		try
 		{
 			// a puzzle's cnf is the rules cnf file plus a clause for each given letter in the puzzle
-			copyFile(new File(RULESPATH), new File(outputPath));
-			BufferedWriter writer = new BufferedWriter(new FileWriter(outputPath, true));
+			BufferedWriter writer = new BufferedWriter(new FileWriter(outputPath));
+			
+			// first copy the rules over.
+			BufferedReader reader = new BufferedReader(new FileReader(RULESPATH));
+			char [] buffer = new char[8192];
+			long count = 0;
+			int n;
+			while ((n = reader.read(buffer)) != -1)
+			{
+				writer.write(buffer, 0, n);
+				count += n;
+			}
+			reader.close();
+			
+			int numclauses = numRulesClauses;
 			
 			// convert the given layout to cnf clauses, each square being its value is a clause
+			boolean first = true;
 			for(int i = 0; i < puzzle.length; i++)
 			{
 				if(puzzle[i] != '_')
 				{
-					int letter = (int)puzzle[i] - (int)'A' + 1;
-					int var = varInt(i, letter);
-					writer.write("\n" + String.valueOf(var) + " 0");
+					if(!first)
+						writer.write("\n");
+					else
+						first = false;
+					//int letter = (int)puzzle[i] - (int)'A' + 1;
+					int var = varInt(i, puzzle[i]);
+					writer.write(String.valueOf(var) + " 0");
+					numclauses++;
 				}
 			}
+			// write the p cnf vars clauses to the beginning of the file
+			RandomAccessFile f = new RandomAccessFile(new File(outputPath), "rw");
+			f.seek(0); // to the beginning
+			String firstLine = "p cnf " + String.valueOf(NUM_VARS) + " " + String.valueOf(numclauses) + " 0\n";
+			f.write(firstLine.getBytes());
+			f.close();
 			writer.close();
+			return numclauses;
 		} catch (IOException e1)
 		{
 			e1.printStackTrace();
+			return 0;
 		}
 	}
 	
@@ -173,28 +229,114 @@ public class Alphadoku
 	// returns the integer value that represents a given variable
 	private int varInt(int row, int col, int letter)
 	{
-		return (row * 5 + col) * 25 + letter;
-	}
-	private int varInt(int index, int letter)
-	{
-		return index * 25 + letter;
+		return (row * 25 + col) * 25 + letter;
 	}
 	
-	private String removeSolution(char [] puzzle)
+	private int varInt(int index, char letter)
+	{
+		int l = (int)letter - (int)'A' + 1;
+		return index * 25 + l;
+	}
+	
+	private String removeSolution(char [] puzzle, String puzzlePath, int numvars)
 	{
 		// if the first 3 squares are C,D,E, then cnf of removed solution
 		// would be ~x1,1,3 | ~x1,2,4 | ~x1,3,5 ...
 		
 		// add the remove solution clause to the 'givens' cnf in a new text file
+		try
+		{
+			BufferedWriter out = new BufferedWriter(new FileWriter(NONUNIQUE_SOLUTION_PATH));
+			BufferedReader in = new BufferedReader(new FileReader(puzzlePath));
+			out.write("p cnf " + NUM_VARS + " " + String.valueOf(numvars + 1) + "\n");
+			in.readLine();
+			char [] buffer = new char[8192];
+			long count = 0;
+			int n;
+			while ((n = in.read(buffer)) != -1)
+			{
+				out.write(buffer, 0, n);
+				count += n;
+			}
+			in.close();
+			String newLine = "\n";
+			for(int i = 0; i < puzzle.length; i++)
+			{
+				newLine += "-" + String.valueOf(varInt(i, puzzle[i])) + " ";
+			}
+			newLine += "0";
+			out.write(newLine);
+			out.close();
+		}
+		catch(IOException e)
+		{
+			e.printStackTrace();
+		}
+		
+		
 		
 		return "";
 	}
 	
-	public void solvePuzzle(String puzzlePath)
+	public void solvePuzzle(String puzzlePath, String outputPath)
 	{
-		//String puzzleCnf = givens(puzzlePath);
-		// minisat
-		// if no solution stop and pring no solution
+		int numvars = givens(puzzlePath, outputPath);
+		
+		ISolver solver = SolverFactory.newDefault();
+		Reader reader = new DimacsReader(solver);
+		try
+		{
+			IProblem problem = reader.parseInstance(outputPath);
+			if(problem.isSatisfiable())
+			{
+				System.out.println("Satisfiable!");
+				int [] solution = problem.model();
+				char [] charSolution = new char [625];
+				int i = 0;
+				for(int var: solution)
+				{
+					if(var > 0)
+					{
+						var = (var - 1) % 25;
+						char v = (char)((int)'A' + var);
+						charSolution[i] = v;
+						i++;
+					}
+				}
+				printPuzzle(charSolution);
+				
+				// find second solution
+				removeSolution(charSolution, outputPath, numvars);
+				IProblem problem2 = reader.parseInstance(NONUNIQUE_SOLUTION_PATH);
+				if(problem2.isSatisfiable())
+				{
+					System.out.println("Not Unique, second solution:");
+					solution = problem2.model();
+					charSolution = new char [625];
+					i = 0;
+					for(int var: solution)
+					{
+						if(var > 0)
+						{
+							var = (var - 1) % 25;
+							char v = (char)((int)'A' + var);
+							charSolution[i] = v;
+							i++;
+						}
+					}
+					printPuzzle(charSolution);
+				}
+				else
+					System.out.println("Solution is unique.");
+			}
+			else
+				System.out.println("No Solution");
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+		// if no solution stop and print no solution
 		// check for mult solutions, print result
 	}
 	
@@ -214,11 +356,22 @@ public class Alphadoku
 				System.out.print(puzzle[r*25 + c] + " ");
 			}
 		}
+		System.out.println("\n");
 	}
 	
-	public void solveDirectory(String directoryPath)
+	public void solveDirectory(File examplesDirectory)
 	{
-		
+		File [] filesList = examplesDirectory.listFiles();
+		for(int i = 0; i < filesList.length; i++)
+		{
+			String exampleLocation = filesList[i].getAbsolutePath();
+			String exampleSolution = "puzzle" + String.valueOf(i + 1) + ".cnf";
+			System.out.println("Solving " + exampleLocation);
+			long start = System.currentTimeMillis();
+			solvePuzzle(exampleLocation, exampleSolution);
+			long end = System.currentTimeMillis();
+			System.out.println("Time: " + String.valueOf(end - start) + " milliseconds");
+		}
 	}
 	
 	public static void main(String [] args)
@@ -233,16 +386,10 @@ public class Alphadoku
 			e.printStackTrace();
 		}
 		String examplesLocation = projectLocation + "\\example_puzzles";
-		
+		File examplesDirectory = new File(examplesLocation);
+		File [] filesList = examplesDirectory.listFiles();
 		
 		Alphadoku a = new Alphadoku();
-		try
-		{
-			a.rules();
-		} catch (IOException e)
-		{
-			e.printStackTrace();
-		}
-		a.givens(examplesLocation + "\\alpha_0.txt", "puzzle1.txt");
+		a.solveDirectory(examplesDirectory);
 	}
 }
